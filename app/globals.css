@@ -96,6 +96,10 @@ body {
     @apply flex justify-between items-center;
   }
 
+  .flex-item {
+    flex: 1 1 50%; /* Grow and shrink, basis at 50% */
+  }
+
   /* TYPOGRAPHY */
   /* 64 */
   .h1-bold {

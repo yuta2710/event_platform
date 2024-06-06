@@ -22,8 +22,13 @@ import { eventDefaultValues } from "@/constants"
 import Dropdown from "./Dropdown"
 import { Textarea } from "../ui/textarea"
 import { FileUploader } from "./FileUploader"
+import { useUploadThing } from '../../lib/uploadthing'
+
 import { useState } from "react"
 import Image from "next/image"
+import { useRouter } from "next/navigation"
+import { createEvent, updateEvent } from "@/lib/actions/event.actions"
+import { IEvent } from "@/lib/database/models/event.model"
 
 
 const formSchema = z.object({
@@ -34,22 +39,86 @@ const formSchema = z.object({
 type EventFormProps = {
   userId: string;
   type: "Create" | "Update"
+  event?: IEvent
+  eventId?: string
 }
 // handle keyboard, mouses and all sorts of different events 
-const EventForm = ({ userId, type }: EventFormProps) => {
+const EventForm = ({ userId, type, event, eventId }: EventFormProps) => {
   const [files, setFiles] = useState<File[]>([]);
   const [startDate, setStartDate] = useState(new Date());
-  const initialValues = eventDefaultValues
+  const initialValues = event && type === 'Update'
+    ? {
+      ...event,
+      startDateTime: new Date(event.startDateTime),
+      endDateTime: new Date(event.startDateTime)
+    }
+    : eventDefaultValues
+
+  const router = useRouter();
+  const { startUpload } = useUploadThing('imageUploader')
   const form = useForm<z.infer<typeof eventFormSchema>>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: initialValues
   })
 
   // 2. Define a submit handler.
-  function onSubmit(values: z.infer<typeof eventFormSchema>) {
+  async function onSubmit(values: z.infer<typeof eventFormSchema>) {
     // Do something with the form values.
     // ✅ This will be type-safe and validated.
-    console.log(values)
+    const eventData = values
+    let uploadedImageUrl = values.imageUrl
+
+    if (files.length > 0) {
+      const uploadedImages = await startUpload(files)
+
+      if (!uploadedImages) {
+        return
+      }
+
+      uploadedImageUrl = uploadedImages[0].url
+    }
+
+    if (type === "Create") {
+      try {
+        const newEvent = await createEvent({
+          event: { ...values, imageUrl: uploadedImageUrl },
+          userId,
+          path: '/profile'
+        })
+
+        if (newEvent) {
+          form.reset()
+          router.push(`/events/${newEvent._id}`)
+        }
+
+      } catch (error) {
+        console.log(error)
+      }
+    }
+
+    if (type === "Update") {
+      if(!eventId) {
+        router.back();
+        return;
+      }
+
+      try {
+        const newEvent = await updateEvent({
+          event: { ...values, imageUrl: uploadedImageUrl, _id: eventId },
+          userId,
+          path: `/events/${eventId}`
+        })
+
+        if (newEvent) {
+          form.reset()
+          router.push(`/events/${newEvent._id}`)
+        }
+
+      } catch (error) {
+        console.log(error)
+      }
+    }
+
   }
 
   return (
@@ -225,37 +294,39 @@ const EventForm = ({ userId, type }: EventFormProps) => {
                         {...field}
                         className="p-regular-16 border-0 bg-gray-50 outline-offset-0 focus:border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                       />
-                  <FormField
-                    control={form.control}
-                    name="isFree"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <div className="flex items-center">
-                            <label htmlFor="isFree" className="whitespace-nowrap pr-3 leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                              Free Ticket
-                            </label>
-                            
-                            <Checkbox
-                              id="isFree"
-                              className="mr-2 h-5 w-5 border-2 border-primary-500" 
-                            />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                      <FormField
+                        control={form.control}
+                        name="isFree"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <div className="flex items-center">
+                                <label htmlFor="isFree" className="whitespace-nowrap pr-3 leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                  Free Ticket
+                                </label>
+
+                                <Checkbox
+                                  onCheckedChange={field.onChange}
+                                  checked={field.value}
+                                  id="isFree"
+                                  className="mr-2 h-5 w-5 border-2 border-primary-500"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-          
-          <FormField
+
+            <FormField
               control={form.control}
-              name="location"
+              name="url"
               render={({ field }) => (
                 <FormItem className="w-full">
                   <FormControl>
@@ -275,8 +346,10 @@ const EventForm = ({ userId, type }: EventFormProps) => {
             />
           </div>
 
-            
-          <Button type="submit">Submit</Button>
+
+          <Button type="submit" size={"lg"} disabled={form.formState.isSubmitting} className="button col-span-2 w-full">
+            {form.formState.isSubmitting ? 'Submitting...' : `${type} Event`}
+          </Button>
         </form>
       </Form>
     </div>
